@@ -865,6 +865,33 @@ def script(parser, xml_parent, data):
         data.get('enable-concurrent', False)).lower()
     XML.SubElement(st, 'exitCode').text = str(data.get('exit-code', 0))
 
+def gitlab_push(parser, xml_parent, data):
+    data = data if data else {}
+
+    glt = XML.SubElement(
+        xml_parent,
+        'com.dabsquared.gitlabjenkins.GitLabPushTrigger'
+    )
+
+    glt.set('plugin', 'gitlab-plugin@1.1.14')
+    spec = XML.SubElement(glt, 'spec')
+
+    triggerOnPush = XML.SubElement(glt, 'triggerOnPush')
+    triggerOnPush.text = data.get('triggerOnPush', 'true')
+
+    triggerOnMergeRequest = XML.SubElement(glt, 'triggerOnMergeRequest')
+    triggerOnMergeRequest.text = data.get('triggerOnMergeRequest', 'true')
+
+    triggerOpenMergeRequestOnPush = XML.SubElement(glt, 'triggerOpenMergeRequestOnPush')
+    triggerOpenMergeRequestOnPush.text = data.get('triggerOpenMergeRequestOnPush', 'true')
+
+    setBuildDescription = XML.SubElement(glt, 'setBuildDescription')
+    setBuildDescription.text = data.get('setBuildDescription', 'true')
+
+    addNoteOnMergeRequest = XML.SubElement(glt, 'addNoteOnMergeRequest')
+    addNoteOnMergeRequest.text = data.get('addNoteOnMergeRequest', 'true')
+
+    allowedBranches = XML.SubElement(glt, 'allowedBranches')
 
 class Triggers(jenkins_jobs.modules.base.Base):
     sequence = 50
