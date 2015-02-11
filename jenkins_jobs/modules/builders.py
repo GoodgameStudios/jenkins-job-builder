@@ -1639,3 +1639,22 @@ def cmake(parser, xml_parent, data):
     # The plugin generates this tag, but there doesn't seem to be anything
     # that can be configurable by it. Let's keep it to mantain compatibility:
     XML.SubElement(cmake, 'builderImpl')
+
+def travis_yml(parser, xml_parent, data):
+    ruby-proxy = XML.SubElement(xml_parent, 'ruby-proxy-object')
+
+    travis = XML.SubElement(ruby-proxy, 'ruby-object', attrib={
+        'pluginid': 'travis-yml',
+        'ruby-class': 'Jenkins::Tasks::BuilderProxy'
+    })
+
+    pluginid = XML.SubElement(travis, 'pluginid', attrib={
+        'pluginid': 'travis-yml',
+        'ruby-class': 'String'
+    })
+    pluginid.text = 'travis-yml'
+
+    object = XML.SubElement(travis, 'object', attrib={
+        'pluginid': 'travis-yml',
+        'ruby-class': 'TravisYmlBuilder'
+    })
