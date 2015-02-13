@@ -1641,9 +1641,9 @@ def cmake(parser, xml_parent, data):
     XML.SubElement(cmake, 'builderImpl')
 
 def travis_yml(parser, xml_parent, data):
-    ruby-proxy = XML.SubElement(xml_parent, 'ruby-proxy-object')
+    ruby_proxy = XML.SubElement(xml_parent, 'ruby-proxy-object')
 
-    travis = XML.SubElement(ruby-proxy, 'ruby-object', attrib={
+    travis = XML.SubElement(ruby_proxy, 'ruby-object', attrib={
         'pluginid': 'travis-yml',
         'ruby-class': 'Jenkins::Tasks::BuilderProxy'
     })
