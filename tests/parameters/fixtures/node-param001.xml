@@ -13,7 +13,9 @@
             <string>slave003</string>
           </allowedSlaves>
           <ignoreOfflineNodes>true</ignoreOfflineNodes>
-          <triggerIfResult>multiSelectionDisallowed</triggerIfResult>
+          <triggerIfResult>allowMultiSelectionForConcurrentBuilds</triggerIfResult>
+          <allowMultiNodeSelection>true</allowMultiNodeSelection>
+          <triggerConcurrentBuilds>true</triggerConcurrentBuilds>
         </org.jvnet.jenkins.plugins.nodelabelparameter.NodeParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
