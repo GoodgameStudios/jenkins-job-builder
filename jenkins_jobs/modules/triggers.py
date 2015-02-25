@@ -936,10 +936,10 @@ def gitlab_push(parser, xml_parent, data):
     setBuildDescription.text = str(data.get('setBuildDescription', False)).lower()
 
     addNoteOnMergeRequest = XML.SubElement(glt, 'addNoteOnMergeRequest')
-    addNoteOnMergeRequest.text = str(data.get('addNoteOnMergeRequest', False)).lower())
+    addNoteOnMergeRequest.text = str(data.get('addNoteOnMergeRequest', False)).lower()
 
     allowAllBranches = XML.SubElement(glt, 'allowAllBranches')
-    allowAllBranches.text = str(data.get('allowAllBranches', False)).lower())
+    allowAllBranches.text = str(data.get('allowAllBranches', False)).lower()
 
     allowedBranches = XML.SubElement(glt, 'allowedBranches')
 
