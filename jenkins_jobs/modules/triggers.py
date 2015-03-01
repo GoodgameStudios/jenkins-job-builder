@@ -942,6 +942,10 @@ def gitlab_push(parser, xml_parent, data):
     allowAllBranches.text = str(data.get('allowAllBranches', False)).lower()
 
     allowedBranches = XML.SubElement(glt, 'allowedBranches')
+    branches = data.get('allowedBranches', ['master'])
+    for branch in branches:
+        XML.SubElement(allowedBranches, 'string').text = branch
+
 
 class Triggers(jenkins_jobs.modules.base.Base):
     sequence = 50
