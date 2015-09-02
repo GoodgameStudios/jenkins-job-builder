@@ -1139,7 +1139,7 @@ def gitlab_push(parser, xml_parent, data):
         'com.dabsquared.gitlabjenkins.GitLabPushTrigger'
     )
 
-    glt.set('plugin', 'gitlab-plugin@1.1.15')
+    glt.set('plugin', 'gitlab-plugin@1.1.24')
     spec = XML.SubElement(glt, 'spec')
 
     triggerOnPush = XML.SubElement(glt, 'triggerOnPush')
@@ -1151,11 +1151,17 @@ def gitlab_push(parser, xml_parent, data):
     triggerOpenMergeRequestOnPush = XML.SubElement(glt, 'triggerOpenMergeRequestOnPush')
     triggerOpenMergeRequestOnPush.text = str(data.get('triggerOpenMergeRequestOnPush', False)).lower()
 
+    triggerOpenMergeRequestOnPush = XML.SubElement(glt, 'ciSkip')
+    triggerOpenMergeRequestOnPush.text = str(data.get('ciSkip', False)).lower()
+
     setBuildDescription = XML.SubElement(glt, 'setBuildDescription')
     setBuildDescription.text = str(data.get('setBuildDescription', False)).lower()
 
     addNoteOnMergeRequest = XML.SubElement(glt, 'addNoteOnMergeRequest')
     addNoteOnMergeRequest.text = str(data.get('addNoteOnMergeRequest', False)).lower()
+
+    addNoteOnMergeRequest = XML.SubElement(glt, 'addVoteOnMergeRequest')
+    addNoteOnMergeRequest.text = str(data.get('addVoteOnMergeRequest', False)).lower()
 
     allowAllBranches = XML.SubElement(glt, 'allowAllBranches')
     allowAllBranches.text = str(data.get('allowAllBranches', False)).lower()
