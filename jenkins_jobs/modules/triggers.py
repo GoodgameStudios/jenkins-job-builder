@@ -1139,7 +1139,7 @@ def gitlab_push(parser, xml_parent, data):
         'com.dabsquared.gitlabjenkins.GitLabPushTrigger'
     )
 
-    glt.set('plugin', 'gitlab-plugin@1.1.24')
+    glt.set('plugin', 'gitlab-plugin@1.1.26')
     spec = XML.SubElement(glt, 'spec')
 
     triggerOnPush = XML.SubElement(glt, 'triggerOnPush')
@@ -1149,7 +1149,7 @@ def gitlab_push(parser, xml_parent, data):
     triggerOnMergeRequest.text = str(data.get('triggerOnMergeRequest', False)).lower()
 
     triggerOpenMergeRequestOnPush = XML.SubElement(glt, 'triggerOpenMergeRequestOnPush')
-    triggerOpenMergeRequestOnPush.text = str(data.get('triggerOpenMergeRequestOnPush', False)).lower()
+    triggerOpenMergeRequestOnPush.text = str(data.get('triggerOpenMergeRequestOnPush', 'never')).lower()
 
     triggerOpenMergeRequestOnPush = XML.SubElement(glt, 'ciSkip')
     triggerOpenMergeRequestOnPush.text = str(data.get('ciSkip', False)).lower()
@@ -1166,11 +1166,15 @@ def gitlab_push(parser, xml_parent, data):
     allowAllBranches = XML.SubElement(glt, 'allowAllBranches')
     allowAllBranches.text = str(data.get('allowAllBranches', False)).lower()
 
-    allowedBranches = XML.SubElement(glt, 'allowedBranches')
-    branches = data.get('allowedBranches', ['master'])
+    includeBranchesSpec = XML.SubElement(glt, 'includeBranchesSpec')
+    branches = data.get('includeBranchesSpec', ['master'])
     for branch in branches:
-        XML.SubElement(allowedBranches, 'string').text = branch
+        XML.SubElement(includeBranchesSpec, 'string').text = branch
 
+    excludeBranchesSpec = XML.SubElement(glt, 'excludeBranchesSpec')
+    branches = data.get('excludeBranchesSpec', [])
+    for branch in branches:
+        XML.SubElement(excludeBranchesSpec, 'string').text = branch
 
 def groovy_script(parser, xml_parent, data):
     """yaml: groovy-script
