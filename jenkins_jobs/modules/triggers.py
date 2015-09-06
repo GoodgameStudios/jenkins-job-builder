@@ -1168,13 +1168,11 @@ def gitlab_push(parser, xml_parent, data):
 
     includeBranchesSpec = XML.SubElement(glt, 'includeBranchesSpec')
     branches = data.get('includeBranchesSpec', ['master'])
-    for branch in branches:
-        XML.SubElement(includeBranchesSpec, 'string').text = branch
+    includeBranchesSpec.text = branches.join(',')
 
     excludeBranchesSpec = XML.SubElement(glt, 'excludeBranchesSpec')
     branches = data.get('excludeBranchesSpec', [])
-    for branch in branches:
-        XML.SubElement(excludeBranchesSpec, 'string').text = branch
+    excludeBranchesSpec.text = branches.join(',')
 
 def groovy_script(parser, xml_parent, data):
     """yaml: groovy-script
