@@ -771,6 +771,21 @@ def timed(parser, xml_parent, data):
     XML.SubElement(scmtrig, 'spec').text = data
 
 
+def bitbucket(parser, xml_parent, data):
+    """yaml: bitbucket
+    Trigger a job when bitbucket repository is pushed to.
+    Requires the Jenkins :jenkins-wiki:`BitBucket Plugin
+    <BitBucket+Plugin>`.
+
+    Example:
+
+    .. literalinclude:: /../../tests/triggers/fixtures/bitbucket.yaml
+    """
+    bbtrig = XML.SubElement(xml_parent, 'com.cloudbees.jenkins.'
+                            'plugins.BitBucketTrigger')
+    XML.SubElement(bbtrig, 'spec').text = ''
+
+
 def github(parser, xml_parent, data):
     """yaml: github
     Trigger a job when github repository is pushed to.
@@ -811,7 +826,28 @@ def github_pull_request(parser, xml_parent, data):
         allows you to selectively test pull requests destined for these
         branches only. Supports regular expressions (e.g. 'master',
         'feature-.*'). (optional)
-
+    :arg string auth-id: the auth id to use (optional)
+    :arg string build-desc-template: the template for build descriptions in
+        jenkins (optional)
+    :arg string status-context: the context to include on PR status comments
+        (optional)
+    :arg string triggered-status: the status message to set when the build has
+        been triggered (optional)
+    :arg string started-status: the status comment to set when the build has
+        been started (optional)
+    :arg string status-url: the status URL to set (optional)
+    :arg string success-status: the status message to set if the job succeeds
+        (optional)
+    :arg string failure-status: the status message to set if the job fails
+        (optional)
+    :arg string error-status: the status message to set if the job errors
+        (optional)
+    :arg string success-comment: comment to add to the PR on a successful job
+        (optional)
+    :arg string failure-comment: comment to add to the PR on a failed job
+        (optional)
+    :arg string error-comment: comment to add to the PR on an errored job
+        (optional)
 
     Example:
 
@@ -829,6 +865,12 @@ def github_pull_request(parser, xml_parent, data):
     org_string = "\n".join(data.get('org-list', []))
     XML.SubElement(ghprb, 'orgslist').text = org_string
     XML.SubElement(ghprb, 'cron').text = data.get('cron', '')
+
+    build_desc_template = data.get('build-desc-template', '')
+    if build_desc_template:
+        XML.SubElement(ghprb, 'buildDescTemplate').text = str(
+            build_desc_template)
+
     XML.SubElement(ghprb, 'triggerPhrase').text = \
         data.get('trigger-phrase', '')
     XML.SubElement(ghprb, 'onlyTriggerPhrase').text = str(
@@ -847,6 +889,113 @@ def github_pull_request(parser, xml_parent, data):
             be = XML.SubElement(ghprb_wltb, 'org.jenkinsci.plugins.'
                                 'ghprb.GhprbBranch')
             XML.SubElement(be, 'branch').text = str(branch)
+
+    auth_id = data.get('auth-id', '')
+    if auth_id:
+        XML.SubElement(ghprb, 'gitHubAuthId').text = str(auth_id)
+
+    # PR status update fields
+    status_context = data.get('status-context', '')
+    triggered_status = data.get('triggered-status', '')
+    started_status = data.get('started-status', '')
+    status_url = data.get('status-url', '')
+    success_status = data.get('success-status', '')
+    failure_status = data.get('failure-status', '')
+    error_status = data.get('error-status', '')
+
+    # is status handling is required?
+    requires_status = (
+        status_context or
+        triggered_status or
+        started_status or
+        status_url or
+        success_status or
+        failure_status or
+        error_status
+    )
+
+    # is status message handling required?
+    requires_status_message = (
+        success_status or
+        failure_status or
+        error_status
+    )
+
+    # Both comment and status elements have this same type.  Using a const is
+    # much easier to read than repeating the tokens for this class each time
+    # it's used
+    comment_type = 'org.jenkinsci.plugins.ghprb.extensions.comments.'
+    comment_type = comment_type + 'GhprbBuildResultMessage'
+
+    if requires_status:
+        extensions = XML.SubElement(ghprb, 'extensions')
+        simple_status = XML.SubElement(extensions,
+                                       'org.jenkinsci.plugins'
+                                       '.ghprb.extensions.status.'
+                                       'GhprbSimpleStatus')
+        if status_context:
+            XML.SubElement(simple_status, 'commitStatusContext').text = str(
+                status_context)
+        if triggered_status:
+            XML.SubElement(simple_status, 'triggeredStatus').text = str(
+                triggered_status)
+        if started_status:
+            XML.SubElement(simple_status, 'startedStatus').text = str(
+                started_status)
+        if status_url:
+            XML.SubElement(simple_status, 'statusUrl').text = str(
+                status_url)
+
+        if requires_status_message:
+            completed_elem = XML.SubElement(simple_status, 'completedStatus')
+            if success_status:
+                success_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(success_elem, 'message').text = str(
+                    success_status)
+                XML.SubElement(success_elem, 'result').text = 'SUCCESS'
+            if failure_status:
+                failure_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(failure_elem, 'message').text = str(
+                    failure_status)
+                XML.SubElement(failure_elem, 'result').text = 'FAILURE'
+            if error_status:
+                error_elem = XML.SubElement(completed_elem, comment_type)
+                XML.SubElement(error_elem, 'message').text = str(error_status)
+                XML.SubElement(error_elem, 'result').text = 'ERROR'
+
+    # comment fields
+    success_comment = data.get('success-comment', '')
+    failure_comment = data.get('failure-comment', '')
+    error_comment = data.get('error-comment', '')
+    requires_job_comment = (
+        success_comment or
+        failure_comment or
+        error_comment
+    )
+
+    # job comment handling
+    if requires_job_comment:
+        extensions = XML.SubElement(ghprb, 'extensions')
+        build_status = XML.SubElement(extensions,
+                                      'org.jenkinsci.plugins.ghprb.extensions'
+                                      '.comments.'
+                                      'GhprbBuildStatus')
+        messages_elem = XML.SubElement(build_status, 'messages')
+        if success_comment:
+            success_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(success_comment_elem, 'message').text = str(
+                success_comment)
+            XML.SubElement(success_comment_elem, 'result').text = 'SUCCESS'
+        if failure_comment:
+            failure_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(failure_comment_elem, 'message').text = str(
+                failure_comment)
+            XML.SubElement(failure_comment_elem, 'result').text = 'FAILURE'
+        if error_comment:
+            error_comment_elem = XML.SubElement(messages_elem, comment_type)
+            XML.SubElement(error_comment_elem, 'message').text = str(
+                error_comment)
+            XML.SubElement(error_comment_elem, 'result').text = 'ERROR'
 
 
 def gitlab_merge_request(parser, xml_parent, data):
@@ -879,6 +1028,70 @@ def gitlab_merge_request(parser, xml_parent, data):
     XML.SubElement(ghprb, 'spec').text = data.get('cron')
     XML.SubElement(ghprb, '__cron').text = data.get('cron')
     XML.SubElement(ghprb, '__projectPath').text = data.get('project-path')
+
+
+def gitlab(parser, xml_parent, data):
+    """yaml: gitlab
+    Makes Jenkins act like a GitlabCI server
+    Requires the Jenkins :jenkins-wiki:`Gitlab Plugin.
+    <Gitlab+Plugin>`.
+
+    :arg bool trigger-push: Build on Push Events (default: true)
+    :arg bool trigger-merge-request: Build on Merge Request Events (default:
+        True)
+    :arg bool trigger-open-merge-request-push: Rebuild open Merge Requests on
+        Push Events (default: True)
+    :arg bool ci-skip: Enable [ci-skip] (default True)
+    :arg bool set-build-description: Set build description to build cause
+        (eg. Merge request or Git Push ) (default: True)
+    :arg bool add-note-merge-request: Add note with build status on
+        merge requests (default: True)
+    :arg bool add-vote-merge-request: Vote added to note with build status
+        on merge requests (default: True)
+    :arg bool allow-all-branches: Allow all branches (Ignoring Filtered
+        Branches) (default: False)
+    :arg list include-branches: Defined list of branches to include
+        (default: [])
+    :arg list exclude-branches: Defined list of branches to exclude
+        (default: [])
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/triggers/fixtures/gitlab001.yaml
+    """
+    def _add_xml(elem, name, value):
+        XML.SubElement(elem, name).text = value
+
+    gitlab = XML.SubElement(
+        xml_parent, 'com.dabsquared.gitlabjenkins.GitLabPushTrigger'
+    )
+
+    bool_mapping = (
+        ('trigger-push', 'triggerOnPush', True),
+        ('trigger-merge-request', 'triggerOnMergeRequest', True),
+        ('trigger-open-merge-request-push', 'triggerOpenMergeRequestOnPush',
+            True),
+        ('ci-skip', 'ciSkip', True),
+        ('set-build-description', 'setBuildDescription', True),
+        ('add-note-merge-request', 'addNoteOnMergeRequest', True),
+        ('add-vote-merge-request', 'addVoteOnMergeRequest', True),
+        ('allow-all-branches', 'allowAllBranches', False),
+    )
+    list_mapping = (
+        ('include-branches', 'includeBranchesSpec', []),
+        ('exclude-branches', 'excludeBranchesSpec', []),
+    )
+
+    XML.SubElement(gitlab, 'spec').text = ''
+
+    for yaml_name, xml_name, default_val in bool_mapping:
+        value = str(data.get(yaml_name, default_val)).lower()
+        _add_xml(gitlab, xml_name, value)
+
+    for yaml_name, xml_name, default_val in list_mapping:
+        value = ', '.join(data.get(yaml_name, default_val))
+        _add_xml(gitlab, xml_name, value)
 
 
 def build_result(parser, xml_parent, data):

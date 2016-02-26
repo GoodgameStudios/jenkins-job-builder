@@ -30,9 +30,16 @@ import xml.etree.ElementTree as XML
 import jenkins_jobs.modules.base
 from jenkins_jobs.modules import hudson_model
 from jenkins_jobs.modules.helpers import build_trends_publisher
+from jenkins_jobs.modules.helpers import cloudformation_init
+from jenkins_jobs.modules.helpers import cloudformation_region_dict
+from jenkins_jobs.modules.helpers import cloudformation_stack
 from jenkins_jobs.modules.helpers import config_file_provider_settings
 from jenkins_jobs.modules.helpers import findbugs_settings
 from jenkins_jobs.modules.helpers import get_value_from_yaml_or_config_file
+from jenkins_jobs.modules.helpers import artifactory_deployment_patterns
+from jenkins_jobs.modules.helpers import artifactory_env_vars_patterns
+from jenkins_jobs.modules.helpers import artifactory_optional_props
+from jenkins_jobs.modules.helpers import artifactory_common_details
 from jenkins_jobs.errors import (InvalidAttributeError,
                                  JenkinsJobsException,
                                  MissingAttributeError)
@@ -286,11 +293,23 @@ def trigger_parameterized_builds(parser, xml_parent, data):
     :arg bool node-parameters: Use the same Node for the triggered builds
       that was used for this build. (optional)
     :arg bool svn-revision: Pass svn revision to the triggered job (optional)
+    :arg bool include-upstream: Include/pass through Upstream SVN Revisons.
+        Only valid when 'svn-revision' is true. (default false)
     :arg bool git-revision: Pass git revision to the other job (optional)
-    :arg str condition: when to trigger the other job (default 'ALWAYS')
+    :arg bool combine-queued-commits: Combine Queued git hashes. Only valid
+        when 'git-revision' is true. (default false)
+    :arg dict boolean-parameters: Pass boolean parameters to the downstream
+        jobs. Specify the name and boolean value mapping of the parameters.
+        (optional)
+    :arg str condition: when to trigger the other job. Can be: 'SUCCESS',
+      'UNSTABLE', 'FAILED_OR_BETTER', 'UNSTABLE_OR_BETTER',
+      'UNSTABLE_OR_WORSE', 'FAILED', 'ALWAYS'. (default: 'ALWAYS')
     :arg str property-file: Use properties from file (optional)
     :arg bool fail-on-missing: Blocks the triggering of the downstream jobs
-      if any of the files are not found in the workspace (default 'False')
+        if any of the files are not found in the workspace (default 'False')
+    :arg str file-encoding: Encoding of contents of the files. If not
+        specified, default encoding of the platform is used. Only valid when
+        'property-file' is specified. (optional)
     :arg bool trigger-with-no-params: Trigger a build even when there are
       currently no parameters defined (default 'False')
     :arg str restrict-matrix-project: Filter that restricts the subset
@@ -305,15 +324,15 @@ def trigger_parameterized_builds(parser, xml_parent, data):
     .. literalinclude::
         /../../tests/publishers/fixtures/trigger_parameterized_builds001.yaml
        :language: yaml
+    .. literalinclude::
+        /../../tests/publishers/fixtures/trigger_parameterized_builds003.yaml
+       :language: yaml
     """
-    tbuilder = XML.SubElement(xml_parent,
-                              'hudson.plugins.parameterizedtrigger.'
-                              'BuildTrigger')
+    pt_prefix = 'hudson.plugins.parameterizedtrigger.'
+    tbuilder = XML.SubElement(xml_parent, pt_prefix + 'BuildTrigger')
     configs = XML.SubElement(tbuilder, 'configs')
     for project_def in data:
-        tconfig = XML.SubElement(configs,
-                                 'hudson.plugins.parameterizedtrigger.'
-                                 'BuildTriggerConfig')
+        tconfig = XML.SubElement(configs, pt_prefix + 'BuildTriggerConfig')
         tconfigs = XML.SubElement(tconfig, 'configs')
         if ('predefined-parameters' in project_def
                 or 'git-revision' in project_def
@@ -323,11 +342,11 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 or 'svn-revision' in project_def
                 or 'restrict-matrix-project' in project_def
                 or 'node-label-name' in project_def
-                or 'node-label' in project_def):
+                or 'node-label' in project_def
+                or 'boolean-parameters' in project_def):
 
             if 'predefined-parameters' in project_def:
-                params = XML.SubElement(tconfigs,
-                                        'hudson.plugins.parameterizedtrigger.'
+                params = XML.SubElement(tconfigs, pt_prefix +
                                         'PredefinedBuildParameters')
                 properties = XML.SubElement(params, 'properties')
                 properties.text = project_def['predefined-parameters']
@@ -336,35 +355,33 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 params = XML.SubElement(tconfigs,
                                         'hudson.plugins.git.'
                                         'GitRevisionBuildParameters')
-                properties = XML.SubElement(params, 'combineQueuedCommits')
-                properties.text = 'false'
+                XML.SubElement(params, 'combineQueuedCommits').text = str(
+                    project_def.get('combine-queued-commits', False)).lower()
             if 'property-file' in project_def and project_def['property-file']:
                 params = XML.SubElement(tconfigs,
-                                        'hudson.plugins.parameterizedtrigger.'
-                                        'FileBuildParameters')
+                                        pt_prefix + 'FileBuildParameters')
                 properties = XML.SubElement(params, 'propertiesFile')
                 properties.text = project_def['property-file']
                 failOnMissing = XML.SubElement(params, 'failTriggerOnMissing')
                 failOnMissing.text = str(project_def.get('fail-on-missing',
                                                          False)).lower()
+                if 'file-encoding' in project_def:
+                    XML.SubElement(params, 'encoding'
+                                   ).text = project_def['file-encoding']
             if ('current-parameters' in project_def
                     and project_def['current-parameters']):
-                XML.SubElement(tconfigs,
-                               'hudson.plugins.parameterizedtrigger.'
-                               'CurrentBuildParameters')
+                XML.SubElement(tconfigs, pt_prefix + 'CurrentBuildParameters')
             if ('node-parameters' in project_def
                     and project_def['node-parameters']):
-                XML.SubElement(tconfigs,
-                               'hudson.plugins.parameterizedtrigger.'
-                               'NodeParameters')
+                XML.SubElement(tconfigs, pt_prefix + 'NodeParameters')
             if 'svn-revision' in project_def and project_def['svn-revision']:
-                XML.SubElement(tconfigs,
-                               'hudson.plugins.parameterizedtrigger.'
-                               'SubversionRevisionBuildParameters')
+                param = XML.SubElement(tconfigs, pt_prefix +
+                                       'SubversionRevisionBuildParameters')
+                XML.SubElement(param, 'includeUpstreamParameters').text = str(
+                    project_def.get('include-upstream', False)).lower()
             if ('restrict-matrix-project' in project_def
                     and project_def['restrict-matrix-project']):
-                subset = XML.SubElement(tconfigs,
-                                        'hudson.plugins.parameterizedtrigger.'
+                subset = XML.SubElement(tconfigs, pt_prefix +
                                         'matrix.MatrixSubsetBuildParameters')
                 XML.SubElement(subset, 'filter').text = \
                     project_def['restrict-matrix-project']
@@ -381,6 +398,18 @@ def trigger_parameterized_builds(parser, xml_parent, data):
                 label = XML.SubElement(params, 'nodeLabel')
                 if 'node-label' in project_def:
                     label.text = project_def['node-label']
+            if ('boolean-parameters' in project_def
+                    and project_def['boolean-parameters']):
+                params = XML.SubElement(tconfigs,
+                                        pt_prefix + 'BooleanParameters')
+                config_tag = XML.SubElement(params, 'configs')
+                param_tag_text = pt_prefix + 'BooleanParameterConfig'
+                params_list = project_def['boolean-parameters']
+                for name, value in params_list.items():
+                    param_tag = XML.SubElement(config_tag, param_tag_text)
+                    XML.SubElement(param_tag, 'name').text = name
+                    XML.SubElement(param_tag, 'value').text = str(
+                        value or False).lower()
         else:
             tconfigs.set('class', 'java.util.Collections$EmptyList')
         projects = XML.SubElement(tconfig, 'projects')
@@ -929,6 +958,31 @@ def junit(parser, xml_parent, data):
     if str(data.get('measurement-plots', False)).lower() == 'true':
         XML.SubElement(datapublisher,
                        'hudson.plugins.measurement__plots.TestDataPublisher')
+
+
+def cucumber_testresult(parser, xml_parent, data):
+    """yaml: cucumber
+    Publish cucumber test results.
+    Requires the Jenkins :jenkins-wiki:`cucumber testresult
+    <Cucumber+Test+Result+Plugin>`.
+
+    :arg str results: results filename (required)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/publishers/fixtures/cucumber_testresult.yaml
+        :language: yaml
+
+    """
+    cucumber_result = XML.SubElement(xml_parent,
+                                     'org.jenkinsci.plugins.cucumber.'
+                                     'jsontestsupport.'
+                                     'CucumberTestResultArchiver')
+    filepath = data.get('results', None)
+    if filepath is None:
+        raise MissingAttributeError('results')
+    XML.SubElement(cucumber_result, 'testResults').text = str(filepath)
 
 
 def xunit(parser, xml_parent, data):
@@ -2417,6 +2471,144 @@ def maven_deploy(parser, xml_parent, data):
         data.get('deploy-unstable', False)).lower()
     if 'release-env-var' in data:
         XML.SubElement(p, 'releaseEnvVar').text = data['release-env-var']
+
+
+def artifactory(parser, xml_parent, data):
+    """ yaml: artifactory
+    Uses/requires the Artifactory plugin to deploy artifacts to
+    Artifactory Server.
+
+    Requires the Jenkins `Artifactory Plugin.
+    :jenkins-wiki: `Artifactory Plugin <Artifactory+Plugin>`.
+
+    :arg str url: Artifactory server url (default '')
+    :arg str name: Artifactory user with permissions use for
+        connected to the selected Artifactory Server (default '')
+    :arg str release-repo-key: Release repository name (default '')
+    :arg str snapshot-repo-key: Snapshots repository name (default '')
+    :arg bool publish-build-info: Push build metadata with artifacts
+        (default False)
+    :arg bool discard-old-builds:
+        Remove older build info from Artifactory (default False)
+    :arg bool discard-build-artifacts:
+        Remove older build artifacts from Artifactory (default False)
+    :arg bool even-if-unstable: Deploy artifacts even when the build
+        is unstable (default False)
+    :arg bool run-checks: Run automatic license scanning check after the
+        build is complete (default False)
+    :arg bool include-publish-artifacts: Include the build's published
+        module artifacts in the license violation checks if they are
+        also used as dependencies for other modules in this build
+        (default False)
+    :arg bool pass-identified-downstream: When true, a build parameter
+        named ARTIFACTORY_BUILD_ROOT with a value of
+        ${JOB_NAME}-${BUILD_NUMBER} will be sent to downstream builds
+        (default False)
+    :arg bool license-auto-discovery: Tells Artifactory not to try
+        and automatically analyze and tag the build's dependencies
+        with license information upon deployment (default True)
+    :arg bool enable-issue-tracker-integration: When the Jenkins
+        JIRA plugin is enabled, synchronize information about JIRA
+        issues to Artifactory and attach issue information to build
+        artifacts (default False)
+    :arg bool aggregate-build-issues: When the Jenkins JIRA plugin
+        is enabled, include all issues from previous builds up to the
+        latest build status defined in "Aggregation Build Status"
+        (default False)
+    :arg bool allow-promotion-of-non-staged-builds: The build
+        promotion operation will be available to all successful builds
+        instead of only staged ones (default False)
+    :arg bool filter-excluded-artifacts-from-build: Add the excluded
+        files to the excludedArtifacts list and remove them from the
+        artifacts list in the build info (default False)
+    :arg str scopes:  A list of dependency scopes/configurations to run
+        license violation checks on. If left empty all dependencies from
+        all scopes will be checked (default '')
+    :arg str violation-recipients: Recipients that need to be notified
+        of license violations in the build info (default '')
+    :arg list matrix-params: Semicolon-separated list of properties to
+        attach to all deployed artifacts in addition to the default ones:
+        build.name, build.number, and vcs.revision (default [])
+    :arg str black-duck-app-name: The existing Black Duck Code Center
+        application name (default '')
+    :arg str black-duck-app-version: The existing Black Duck Code Center
+        application version (default '')
+    :arg str black-duck-report-recipients: Recipients that will be emailed
+        a report after the automatic Black Duck Code Center compliance checks
+        finished (default '')
+    :arg str black-duck-scopes: A list of dependency scopes/configurations
+        to run Black Duck Code Center compliance checks on. If left empty
+        all dependencies from all scopes will be checked (default '')
+    :arg bool black-duck-run-checks: Automatic Black Duck Code Center
+        compliance checks will occur after the build completes
+        (default False)
+    :arg bool black-duck-include-published-artifacts: Include the build's
+        published module artifacts in the license violation checks if they
+        are also used as dependencies for other modules in this build
+        (default False)
+    :arg bool auto-create-missing-component-requests: Auto create
+        missing components in Black Duck Code Center application after
+        the build is completed and deployed in Artifactory
+        (default True)
+    :arg bool auto-discard-stale-component-requests: Auto discard
+        stale components in Black Duck Code Center application after
+        the build is completed and deployed in Artifactory
+        (default True)
+    :arg bool deploy-artifacts: Push artifacts to the Artifactory
+        Server. Use deployment-include-patterns and
+        deployment-exclude-patterns to filter deploy artifacts. (default True)
+    :arg list deployment-include-patterns: New line or comma separated mappings
+        of build artifacts to published artifacts. Supports Ant-style wildcards
+        mapping to target directories. E.g.: */*.zip=>dir (default [])
+    :arg list deployment-exclude-patterns: New line or comma separated patterns
+        for excluding artifacts from deployment to Artifactory (default [])
+    :arg bool env-vars-include: Include all environment variables
+        accessible by the build process. Jenkins-specific env variables
+        are always included. Use env-vars-include-patterns and
+        env-vars-exclude-patterns to filter variables to publish,
+        (default False)
+    :arg list env-vars-include-patterns: Comma or space-separated list of
+        environment variables that will be included as part of the published
+        build info. Environment variables may contain the * and the ? wildcards
+        (default [])
+    :arg list env-vars-exclude-patterns: Comma or space-separated list of
+        environment variables that will be excluded from the published
+        build info (default [])
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/artifactory01.yaml
+
+    .. literalinclude:: /../../tests/publishers/fixtures/artifactory02.yaml
+
+    """
+
+    artifactory = XML.SubElement(
+        xml_parent, 'org.jfrog.hudson.ArtifactoryRedeployPublisher')
+
+    # optional_props
+    artifactory_optional_props(artifactory, data, 'publishers')
+
+    XML.SubElement(artifactory, 'matrixParams').text = ','.join(
+        data.get('matrix-params', []))
+
+    # details
+    details = XML.SubElement(artifactory, 'details')
+    artifactory_common_details(details, data)
+
+    XML.SubElement(details, 'repositoryKey').text = data.get(
+        'release-repo-key', '')
+    XML.SubElement(details, 'snapshotsRepositoryKey').text = data.get(
+        'snapshot-repo-key', '')
+
+    plugin = XML.SubElement(details, 'stagingPlugin')
+    XML.SubElement(plugin, 'pluginName').text = 'None'
+
+    # artifactDeploymentPatterns
+    artifactory_deployment_patterns(artifactory, data)
+
+    # envVarsPatterns
+    artifactory_env_vars_patterns(artifactory, data)
 
 
 def text_finder(parser, xml_parent, data):
@@ -4950,6 +5142,239 @@ def clamav(parser, xml_parent, data):
         data.get('includes', ''))
     XML.SubElement(clamav, 'excludes').text = str(
         data.get('excludes', ''))
+
+
+def cloudformation(parser, xml_parent, data):
+    """yaml: cloudformation
+    Create cloudformation stacks before running a build and optionally
+    delete them at the end.  Requires the Jenkins :jenkins-wiki:`AWS
+    Cloudformation Plugin <AWS+Cloudformation+Plugin>`.
+
+    :arg list create-stacks: List of stacks to create
+
+        :create-stacks attributes:
+            * **arg str name** - The name of the stack (Required)
+            * **arg str description** - Description of the stack (Optional)
+            * **arg str recipe** - The cloudformation recipe file (Required)
+            * **arg list parameters** - A list of key/value pairs, will be
+              joined together into a comma separated string (Optional)
+            * **arg int timeout** - Number of seconds to wait before giving up
+              creating a stack (default 0)
+            * **arg str access-key** - The Amazon API Access Key (Required)
+            * **arg str secret-key** - The Amazon API Secret Key (Required)
+            * **arg int sleep** - Number of seconds to wait before continuing
+              to the next step (default 0)
+            * **arg array region** - The region to run cloudformation in.
+              (Required)
+
+                :region values:
+                    * **us-east-1**
+                    * **us-west-1**
+                    * **us-west-2**
+                    * **eu-central-1**
+                    * **eu-west-1**
+                    * **ap-southeast-1**
+                    * **ap-southeast-2**
+                    * **ap-northeast-1**
+                    * **sa-east-1**
+    :arg list delete-stacks: List of stacks to delete
+
+        :delete-stacks attributes:
+            * **arg list name** - The names of the stacks to delete (Required)
+            * **arg str access-key** - The Amazon API Access Key (Required)
+            * **arg str secret-key** - The Amazon API Secret Key (Required)
+            * **arg bool prefix** - If selected the tear down process will look
+              for the stack that Starts with the stack name with the oldest
+              creation date and will delete it.  (Default False)
+            * **arg array region** - The region to run cloudformation in.
+              (Required)
+
+                :region values:
+                    * **us-east-1**
+                    * **us-west-1**
+                    * **us-west-2**
+                    * **eu-central-1**
+                    * **eu-west-1**
+                    * **ap-southeast-1**
+                    * **ap-southeast-2**
+                    * **ap-northeast-1**
+                    * **sa-east-1**
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/cloudformation.yaml
+       :language: yaml
+    """
+    region_dict = cloudformation_region_dict()
+    stacks = cloudformation_init(xml_parent, data, 'CloudFormationPostBuild'
+                                 'Notifier')
+    for stack in data.get('create-stacks', []):
+        cloudformation_stack(xml_parent, stack, 'PostBuildStackBean',
+                             stacks, region_dict)
+    delete_stacks = cloudformation_init(xml_parent, data, 'CloudFormation'
+                                                          'Notifier')
+    for delete_stack in data.get('delete-stacks', []):
+        cloudformation_stack(xml_parent, delete_stack, 'SimpleStackBean',
+                             delete_stacks, region_dict)
+
+
+def whitesource(parser, xml_parent, data):
+    """yaml: whitesource
+    This plugin brings automatic open source management to Jenkins users.
+
+    Requires the Jenkins :jenkins-wiki:`Whitesource Plugin
+    <Whitesource+Plugin>`.
+
+    :arg str product-token: Product name or token to update (Default '')
+    :arg str version: Product version (Default '')
+    :arg str override-token: Override the api token from the global config
+        (Default '')
+    :arg str project-token: Token uniquely identifying the project to update
+        (Default '')
+    :arg list includes: list of libraries to include (Default '[]')
+    :arg list excludes: list of libraries to exclude (Default '[]')
+    :arg str policies: Whether to override the global settings.  Valid values:
+        global, enable, disable (Default 'global')
+
+    Example:
+
+    .. literalinclude:: /../../tests/publishers/fixtures/whitesource001.yaml
+       :language: yaml
+    """
+
+    policies = ['global', 'enable', 'disable']
+    policies_value = str(data.get('policies', 'global').lower())
+    if policies_value not in policies:
+        raise InvalidAttributeError('policies', policies_value, policies)
+    whitesource = XML.SubElement(xml_parent, 'org.whitesource.jenkins.'
+                                             'WhiteSourcePublisher')
+    XML.SubElement(whitesource, 'jobCheckPolicies').text = policies_value
+    XML.SubElement(whitesource, 'jobApiToken').text = data.get(
+        'override-token', '')
+    XML.SubElement(whitesource, 'product').text = data.get(
+        'product-token', '')
+    XML.SubElement(whitesource, 'productVersion').text = data.get(
+        'version', '')
+    XML.SubElement(whitesource, 'projectToken').text = data.get(
+        'project-token', '')
+    XML.SubElement(whitesource, 'libIncludes').text = ' '.join(
+        data.get('includes', []))
+    XML.SubElement(whitesource, 'libExcludes').text = ' '.join(
+        data.get('excludes', []))
+    XML.SubElement(whitesource, 'ignorePomModules').text = 'false'
+
+
+def hipchat(parser, xml_parent, data):
+    """yaml: hipchat
+    Publisher that sends hipchat notifications on job events
+    Requires the Jenkins :jenkins-wiki:`Hipchat Plugin
+    <Hipchat+Plugin>` version >=1.9
+
+    Please see documentation for older plugin version
+    http://docs.openstack.org/infra/jenkins-job-builder/hipchat.html
+
+    :arg str token: This will override the default auth token (optional)
+    :arg list rooms: list of HipChat rooms to post messages to, overrides
+        global default (optional)
+    :arg bool notify-start: post messages about build start event
+        (default False)
+    :arg bool notify-success: post messages about successful build event
+        (default False)
+    :arg bool notify-aborted: post messages about aborted build event
+        (default False)
+    :arg bool notify-not-built: post messages about build set to NOT_BUILT.
+        This status code is used in a multi-stage build where a problem in
+        earlier stage prevented later stages from building. (default False)
+    :arg bool notify-unstable: post messages about unstable build event
+        (default False)
+    :arg bool notify-failure:  post messages about build failure event
+        (default False)
+    :arg bool notify-back-to-normal: post messages about build being back to
+        normal after being unstable or failed (default False)
+    :arg str start-message: This will override the default start message
+        (optional)
+    :arg str complete-message: This will override the default complete message
+        (optional)
+
+    Example:
+
+    .. literalinclude::  /../../tests/publishers/fixtures/hipchat001.yaml
+       :language: yaml
+    """
+    hipchat = XML.SubElement(
+        xml_parent,
+        'jenkins.plugins.hipchat.HipChatNotifier')
+    XML.SubElement(hipchat, 'token').text = str(
+        data.get('token', ''))
+
+    if 'rooms' in data:
+        XML.SubElement(hipchat, 'room').text = str(
+            ",".join(data['rooms']))
+
+    XML.SubElement(hipchat, 'startNotification').text = str(
+        data.get('notify-start', False)).lower()
+    XML.SubElement(hipchat, 'notifySuccess').text = str(
+        data.get('notify-success', False)).lower()
+    XML.SubElement(hipchat, 'notifyAborted').text = str(
+        data.get('notify-aborted', False)).lower()
+    XML.SubElement(hipchat, 'notifyNotBuilt').text = str(
+        data.get('notify-not-built', False)).lower()
+    XML.SubElement(hipchat, 'notifyUnstable').text = str(
+        data.get('notify-unstable', False)).lower()
+    XML.SubElement(hipchat, 'notifyFailure').text = str(
+        data.get('notify-failure', False)).lower()
+    XML.SubElement(hipchat, 'notifyBackToNormal').text = str(
+        data.get('notify-back-to-normal', False)).lower()
+
+    # optional settings, so only add XML in if set.
+    if 'start-message' in data:
+        XML.SubElement(hipchat, 'startJobMessage').text = str(
+            data['start-message'])
+    if 'complete-message' in data:
+        XML.SubElement(hipchat, 'completeJobMessage').text = str(
+            data['complete-message'])
+
+
+def phabricator(parser, xml_parent, data):
+    """yaml: phabricator
+    Integrate with `Phabricator <http://phabricator.org/>`_
+
+    Requires the Jenkins :jenkins-wiki:`Phabricator Plugin
+    <Phabricator+Plugin>`.
+
+    :arg bool comment-on-success: Post a *comment* when the build
+      succeeds. (optional)
+    :arg bool uberalls-enabled: Integrate with uberalls. (optional)
+    :arg str comment-file: Include contents of given file if
+      commenting is enabled. (optional)
+    :arg int comment-size: Maximum comment character length. (optional)
+    :arg bool comment-with-console-link-on-failure: Post a *comment*
+      when the build fails. (optional)
+
+    Example:
+
+    .. literalinclude::
+        /../../tests/publishers/fixtures/phabricator001.yaml
+       :language: yaml
+    """
+
+    root = XML.SubElement(xml_parent,
+                          'com.uber.jenkins.phabricator.PhabricatorNotifier')
+
+    if 'comment-on-success' in data:
+        XML.SubElement(root, 'commentOnSuccess').text = str(
+            data.get('comment-on-success')).lower()
+    if 'uberalls-enabled' in data:
+        XML.SubElement(root, 'uberallsEnabled').text = str(
+            data.get('uberalls-enabled')).lower()
+    if 'comment-file' in data:
+        XML.SubElement(root, 'commentFile').text = data.get('comment-file')
+    if 'comment-size' in data:
+        XML.SubElement(root, 'commentSize').text = str(
+            data.get('comment-size'))
+    if 'comment-with-console-link-on-failure' in data:
+        XML.SubElement(root, 'commentWithConsoleLinkOnFailure').text = str(
+            data.get('comment-with-console-link-on-failure')).lower()
 
 
 class Publishers(jenkins_jobs.modules.base.Base):
